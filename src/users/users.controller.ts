@@ -7,16 +7,19 @@ import { ILogger } from '../logger/logger.interface';
 import { IUsersController } from './users.controller.interface';
 import { UserLoginDto } from './dto/user-login.dto';
 import { UserRegisterDto } from './dto/user-register.dto';
-import { User } from './user.entity';
-import { UsersService } from './users.service';
 import { HttpError } from '../errors/http.error.class';
 import { ValidateMiddleware } from '../common/validate.middleware';
+import { sign } from 'jsonwebtoken';
+import { IConfigService } from '../config/config.service.interface';
+import { IUsersService } from './users.service.interface';
+import { AuthGuard } from '../common/auth.guard';
 
 @injectable()
 export class UsersController extends BaseController implements IUsersController {
 	constructor(
         @inject(TYPES.ILogger) private loggerService: ILogger,
-        @inject(TYPES.UsersService) private usersService: UsersService
+        @inject(TYPES.UsersService) private usersService: IUsersService,
+        @inject(TYPES.ConfigService) private configService: IConfigService
     ) {
 		super(loggerService);
 		this.bindRoutes([
@@ -32,6 +35,12 @@ export class UsersController extends BaseController implements IUsersController 
                 func: this.login,
                 middlewares: [new ValidateMiddleware(UserLoginDto)] 
              },
+             { 
+                path: '/info',
+                method: 'get',
+                func: this.info,
+                middlewares: [new AuthGuard()]
+             },
 		]);
 	}
 
@@ -39,9 +48,10 @@ export class UsersController extends BaseController implements IUsersController 
         const result = await this.usersService.validateUser(body);
         if (!result) {
             return next(new HttpError(401, 'Error auth'));
-        } else {
-            this.ok(res, {});
         }
+        const jwt = await this.signJWT(body.email, this.configService.get('SECRET'));
+
+        this.ok(res, {jwt});
 	}
 
 	async register({ body }: Request<{}, {}, UserRegisterDto>, res: Response, next: NextFunction): Promise<void> {
@@ -51,4 +61,25 @@ export class UsersController extends BaseController implements IUsersController 
         }
 		this.ok(res, { email: result.email, id: result.id });
 	}
+
+    async info({ user }: Request<{}, {}, UserRegisterDto>, res: Response, next: NextFunction): Promise<void> {
+        const userInfo = await this.usersService.getUserInfo(user);
+        this.ok(res, { email: userInfo?.email, id: userInfo?.id });
+    }
+
+    private signJWT(email: string, secret: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            sign({
+                email,
+                iat: Math.floor(Date.now() / 1000),
+            }, secret, {
+                algorithm: 'HS256'
+            }, (err, token) => {
+                if (err) {
+                    reject(err);
+                }
+                resolve(token as string);
+            })
+        })
+    }
 }

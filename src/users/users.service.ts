@@ -12,7 +12,7 @@ import { UserModel } from '@prisma/client';
 @injectable()
 export class UsersService implements IUsersService {
     constructor(
-        @inject(TYPES.IConfigService) private configService: IConfigService,
+        @inject(TYPES.ConfigService) private configService: IConfigService,
         @inject(TYPES.UsersRepository) private usersRepository: IUsersRepository
     ) {}
 
@@ -34,5 +34,9 @@ export class UsersService implements IUsersService {
         
         const newUser = new User(existingUser.email, existingUser.name, existingUser.password);
         return newUser.comparePassword(password);
+    }
+
+    async getUserInfo(email: string): Promise<UserModel | null> {
+        return this.usersRepository.find(email);
     }
 }
